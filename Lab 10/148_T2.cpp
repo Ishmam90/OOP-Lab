@@ -18,7 +18,7 @@ class AutonomusUnit{
             this->operationalStatus=operationalSatus;
         }
 
-        ~AutonomusUnit(){
+        virtual ~AutonomusUnit(){
             cout<<"Autonomus Unit Shutting Down"<<endl;
         }
 
@@ -34,7 +34,7 @@ class AutonomusUnit{
         virtual void executeMission()=0;
 };
 
-class VehicleUnit:public AutonomusUnit{
+class VehicleUnit:virtual public AutonomusUnit{
     protected:
         int maxSpeed;
         float fuelLevel;
@@ -49,12 +49,7 @@ class VehicleUnit:public AutonomusUnit{
             currentLocationY=0;
         }
 
-        VehicleUnit(int maxSpeed, int fuelLevel){
-            if(maxSpeed>0)                      this->maxSpeed=maxSpeed;
-            if(fuelLevel>=0 && fuelLevel<=100)  this->fuelLevel=fuelLevel;
-            if(currentLocationX>=0)             this->currentLocationX=currentLocationX;
-            if(currentLocationY>=0)             this->currentLocationY=currentLocationY;
-        }
+        VehicleUnit(string id, bool status, int maxSpeed, int fuelLevel, int x, int y) : AutonomusUnit(id, status), maxSpeed(maxSpeed), fuelLevel(fuelLevel), currentLocationX(x), currentLocationY(y){}
 
         ~VehicleUnit(){
             cout<<"Vehicle going Dark";
@@ -107,7 +102,7 @@ class VehicleUnit:public AutonomusUnit{
         }
 };
 
-class CameraUnit:public AutonomusUnit{
+class CameraUnit:virtual public AutonomusUnit{
     protected:
         bool nightVisionMode;
         int storageCapacity;
@@ -186,7 +181,7 @@ class WeaponArm{
             weaponType="None";
         }
 
-        WeaponArm(int ammoCount, int damage){
+        WeaponArm(int ammoCount, int damage, string weaponType){
             if(ammoCount>0) this->ammoCount=ammoCount;
             if(damage>0)    this->damage=damage;
             if(weaponType=="Kinetic" || weaponType=="Energy") this->weaponType=weaponType;
@@ -243,9 +238,9 @@ class WeaponArm{
 class MissionObjective{
     public:
         virtual void planExecution()=0;
-        virtual void exectue()=0;
+        virtual void execute()=0;
         
-        string getMissionType()const{
+        virtual string getMissionType()const{
             return "Mission Classification";
         }
 
@@ -270,13 +265,13 @@ class ReconMission:public MissionObjective{
             if(intelPriority>0)   this->intelPriority=intelPriority;
         }
 
-        void planExecution()const{
+        void planExecution()override{
             cout<<"Planning reconnaissance of "<<areaToScan<<" Priority: "<<intelPriority<<endl;
         }
 
-        void execute()const{
-            cout<<"Executing stealth surveillence protocol"<<endl;
-        }
+        void execute() override{
+            cout<<"Executing stealth serveillance protocol."<<endl;
+        };
 
         string getMissionType()const{
             return "Reconnaissance";
@@ -287,31 +282,37 @@ class PatrolBot:public VehicleUnit, CameraUnit{
     private:
         string modelNumber;
         WeaponArm WArm;
-        MissionObjective* assignedMission;
+        MissionObjective** assignedMission;
         int missionCount;
+        int missionCapacity;
 
     public:
         PatrolBot():VehicleUnit(), CameraUnit(){
             modelNumber="X";
             missionCount=0;
+            missionCapacity=0;
             assignedMission=NULL;
         }
 
-        PatrolBot(VehicleUnit VUnit, CameraUnit CUnit, string modelNumber, WeaponArm WArm, int missionCount, MissionObjective* assignedMission):VehicleUnit(VUnit), CameraUnit(CUnit){
-            VehicleUnit(VUnit);
-            CameraUnit(CUnit);
-            this->modelNumber=modelNumber;
-            this->WArm=WArm;
-            if(missionCount>=0) this->missionCount=missionCount;
-            this->assignedMission=assignedMission;
+        PatrolBot(string id, bool status, int maxSpeed, float fuel, int x, int y, bool nightVision, int storage, string quality, string modelNumber, WeaponArm weapon, int missionCapacity)
+            : AutonomusUnit(id, status),
+              VehicleUnit(id, status, maxSpeed, fuel, x, y),
+              CameraUnit(nightVision, storage, quality),
+              modelNumber(modelNumber),
+              WArm(weapon){
+            missionCount = 0;
+            this->missionCapacity=missionCapacity;
+            assignedMission = new MissionObjective*[missionCapacity];
         }
 
         ~PatrolBot(){
+            delete[] assignedMission;
             cout<<modelNumber<<" going Dark"<<endl;
         }
 
         void patrolArea(){
             move();
+            recordFootage();
         }
 
         void engageTarget(){
@@ -331,15 +332,14 @@ class PatrolBot:public VehicleUnit, CameraUnit{
         }
 
         void assignMission(MissionObjective* mission){
-            assignedMission=mission;
+            if(missionCount < missionCapacity)
+                assignedMission[missionCount++] = mission;
         }
 
         void executeAllMissions(){
-            MissionObjective* temp=assignedMission;
-            while(temp!=NULL){
-                temp->planExecution();
-                temp->exectue();
-                temp=NULL;
+            for(int i = 0; i < missionCount; i++){
+                assignedMission[i]->planExecution();
+                assignedMission[i]->execute();
             }
         }
 
@@ -350,8 +350,69 @@ class PatrolBot:public VehicleUnit, CameraUnit{
         virtual void getCapabilityReport()const{
             cout<<"Patrol Bot Mission Capability: "<<missionCount<<endl;
         }
+
+        void reloadWeapon(int amount){
+            WArm.reload(amount);
+        }
+
+        void executeMission() override{
+            VehicleUnit::executeMission();
+        }
 };
 
-int main(){
+class DefenseMission:public MissionObjective{
+    private:
+        string perimeterToGuard;
+        int threatLevel;
 
+    public:
+        DefenseMission(string area="Base", int threat=1)
+            : perimeterToGuard(area), threatLevel(threat){}
+
+        void planExecution() override{
+            cout<<"Establishing defense at "<<perimeterToGuard<<". Threat: "<<threatLevel<<endl;
+        }
+
+        void execute() override{
+            cout<<"Activating defensive countermeasures."<<endl;
+        }
+
+        string getMissionType()const override{
+            return "Defense";
+        }
+};
+
+
+int main(){
+    WeaponArm weapon(3, 50, "Kinetic");
+
+    PatrolBot bot(
+        "P-01", true,
+        80, 50.0, 0, 0,
+        true, 100, "4K",
+        "X9",
+        weapon,
+        5
+    );
+
+    cout <<"PATROL"<<endl;
+    bot.patrolArea();
+
+    cout <<"ENGAGING TARGET"<<endl;
+    bot.engageTarget();
+    bot.engageTarget();
+    bot.engageTarget();
+    bot.engageTarget(); // out of ammo
+
+    cout <<"RELOADING"<<endl;
+    bot.reloadWeapon(5);
+
+    ReconMission r1("Sector 7", 3);
+    DefenseMission d1("Main Gate", 5);
+
+    bot.assignMission(&r1);
+    bot.assignMission(&d1);
+
+    cout <<"EXECUTING MISSIONS"<<endl;
+    bot.executeAllMissions();
 }
